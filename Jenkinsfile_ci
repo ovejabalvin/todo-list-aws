@@ -1,0 +1,136 @@
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+    }
+
+    environment {
+        APP_REPO_URL = 'https://github.com/ovejabalvin/todo-list-aws.git'
+        CONFIG_REPO_URL = 'https://github.com/ovejabalvin/todo-list-aws-config.git'
+        CONFIG_BRANCH = 'staging'
+        SOURCE_BRANCH = 'develop'
+        SAM_ENV = 'staging'
+        STACK_NAME = 'todo-list-aws-staging'
+        AWS_REGION = 'us-east-1'
+    }
+
+    stages {
+        stage('Get Code') {
+            steps {
+                sh 'whoami && hostname'
+                checkout([$class: 'GitSCM',
+                    branches: [[name: "*/${env.SOURCE_BRANCH}"]],
+                    userRemoteConfigs: [[url: env.APP_REPO_URL]]
+                ])
+                sh '''
+                    set -eu
+                    rm -rf .cp-config reports
+                    mkdir -p reports
+                    git clone --depth 1 --branch "$CONFIG_BRANCH" "$CONFIG_REPO_URL" .cp-config
+                    cp .cp-config/samconfig.toml samconfig.toml
+                    test -f samconfig.toml
+                    echo "Codigo: $SOURCE_BRANCH" | tee reports/pipeline-context.txt
+                    echo "Config: $CONFIG_BRANCH" | tee -a reports/pipeline-context.txt
+                    echo "Nodo: $(hostname)" | tee -a reports/pipeline-context.txt
+                    echo "Usuario: $(whoami)" | tee -a reports/pipeline-context.txt
+                '''
+            }
+        }
+
+        stage('Install Tools') {
+            steps {
+                sh '''
+                    set -eu
+                    python3 -m venv .venv
+                    . .venv/bin/activate
+                    python -m pip install --upgrade pip
+                    python -m pip install -r requirements-dev.txt
+                    python -m pip install -r src/requirements.txt
+                '''
+            }
+        }
+
+        stage('Static Test') {
+            steps {
+                sh '''
+                    set -eu
+                    . .venv/bin/activate
+                    mkdir -p reports
+                    flake8 src --count --statistics --output-file=reports/flake8.txt || true
+                    bandit -r src -f txt -o reports/bandit.txt || true
+                    bandit -r src -f html -o reports/bandit.html || true
+                    test -f reports/flake8.txt
+                    test -f reports/bandit.txt
+                    test -f reports/bandit.html
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'reports/flake8.txt,reports/bandit.txt,reports/bandit.html', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh '''
+                    set -eu
+                    sam validate --region "$AWS_REGION"
+                    sam build
+                    sam deploy --config-env "$SAM_ENV" --no-confirm-changeset --no-fail-on-empty-changeset
+                    aws cloudformation describe-stacks \
+                        --stack-name "$STACK_NAME" \
+                        --query 'Stacks[0].Outputs[?OutputKey==BaseUrlApi].OutputValue' \
+                        --region "$AWS_REGION" \
+                        --output text > reports/base_url.txt
+                    cat reports/base_url.txt
+                    test -s reports/base_url.txt
+                '''
+            }
+        }
+
+        stage('Rest Test') {
+            steps {
+                sh '''
+                    set -eu
+                    . .venv/bin/activate
+                    export BASE_URL="$(cat reports/base_url.txt)"
+                    echo "BASE_URL=$BASE_URL"
+                    set +e
+                    pytest -q test/integration/todoApiTest.py --junitxml=reports/pytest-integration.xml > reports/pytest-integration.log 2>&1
+                    status=$?
+                    set -e
+                    cat reports/pytest-integration.log
+                    exit $status
+                '''
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true, testResults: 'reports/pytest-integration.xml'
+                    archiveArtifacts artifacts: 'reports/pytest-integration.*', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Promote') {
+            steps {
+                sh '''
+                    set -eu
+                    git config user.email "jenkins@example.local"
+                    git config user.name "Jenkins CI"
+                    git fetch origin master develop
+                    git checkout master
+                    git merge --no-edit origin/develop
+                    git push origin master
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: 'reports/*/', allowEmptyArchive: true
+        }
+    }
+}

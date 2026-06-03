@@ -5,3 +5,6 @@ tests
 pyenvunittests
 .coverage
 coverage.xml
+
+reports/
+samconfig.toml
