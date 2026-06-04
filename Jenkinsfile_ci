@@ -86,7 +86,7 @@ pipeline {
                         --region "$AWS_REGION" \
                         --output json > reports/stack.json
 
-                    python - <<'PY'
+                    python3 - <<'PY'
 import json
 
 with open("reports/stack.json") as f:
