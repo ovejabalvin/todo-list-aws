@@ -144,11 +144,11 @@ PY
                 '''
             }
         }
+    }
 
     post {
         always {
-            archiveArtifacts artifacts: 'reports/*/', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'reports/**/*', allowEmptyArchive: true
         }
     }
-}
 }
