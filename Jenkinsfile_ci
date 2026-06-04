@@ -140,11 +140,10 @@ PY
                     git fetch origin master develop
                     git checkout master
                     git merge --no-edit origin/develop
-                    git push origin master
+                    echo "Promocion local completada. Para subir a GitHub ejecutar manualmente: git push origin master"
                 '''
             }
         }
-    }
 
     post {
         always {

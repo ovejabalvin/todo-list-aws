@@ -171,25 +171,18 @@ PY
         }
 
         stage('Promote') {
-            when {
-                expression { env.TARGET_ENV == 'staging' }
-            }
             steps {
-                unstash 'rest-reports'
                 sh '''
                     set -eu
-                    echo "Nodo Promote: $(hostname)"
-                    echo "Usuario Promote: $(whoami)"
                     git config user.email "jenkins@example.local"
                     git config user.name "Jenkins CI"
                     git fetch origin master develop
                     git checkout master
                     git merge --no-edit origin/develop
-                    git push origin master
+                    echo "Promocion local completada. Para subir a GitHub ejecutar manualmente: git push origin master"
                 '''
             }
         }
-    }
 
     post {
         always {
