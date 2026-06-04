@@ -42,6 +42,7 @@ pipeline {
             steps {
                 sh '''
                     set -eu
+                    rm -rf .venv
                     python3 -m venv .venv
                     . .venv/bin/activate
                     python -m pip install --upgrade pip
@@ -58,11 +59,28 @@ pipeline {
                     sam validate --region "$AWS_REGION"
                     sam build
                     sam deploy --config-env "$SAM_ENV" --no-confirm-changeset --no-fail-on-empty-changeset
+
                     aws cloudformation describe-stacks \
                         --stack-name "$STACK_NAME" \
-                        --query "Stacks[0].Outputs[?OutputKey==BaseUrlApi].OutputValue" \
                         --region "$AWS_REGION" \
-                        --output text > reports/base_url.txt
+                        --output json > reports/stack.json
+
+                    python3 - <<'PY'
+import json
+
+with open("reports/stack.json") as f:
+    data = json.load(f)
+
+outputs = data["Stacks"][0].get("Outputs", [])
+for output in outputs:
+    if output.get("OutputKey") == "BaseUrlApi":
+        with open("reports/base_url.txt", "w") as f:
+            f.write(output["OutputValue"] + "\\n")
+        break
+else:
+    raise SystemExit("No se encontro el output BaseUrlApi")
+PY
+
                     cat reports/base_url.txt
                     test -s reports/base_url.txt
                 '''
@@ -95,7 +113,7 @@ pipeline {
 
     post {
         always {
-            archiveArtifacts artifacts: 'reports/*/', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'reports/**/*', allowEmptyArchive: true
         }
     }
 }
