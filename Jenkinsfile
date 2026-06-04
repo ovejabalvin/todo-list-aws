@@ -38,6 +38,8 @@ pipeline {
                     set -eu
                     echo "BRANCH_NAME=$BRANCH_NAME"
                     echo "TARGET_ENV=$TARGET_ENV"
+                    echo "CONFIG_BRANCH=$CONFIG_BRANCH"
+                    echo "STACK_NAME=$STACK_NAME"
                     echo "Nodo Resolve Branch: $(hostname)"
                     echo "Usuario Resolve Branch: $(whoami)"
                 '''
@@ -51,13 +53,22 @@ pipeline {
                     set -eu
                     rm -rf .cp-config reports
                     mkdir -p reports
+
+                    echo "Descargando configuracion externa..."
                     git clone --depth 1 --branch "$CONFIG_BRANCH" "$CONFIG_REPO_URL" .cp-config
+
+                    echo "Copiando samconfig.toml desde repo de configuracion..."
                     cp .cp-config/samconfig.toml samconfig.toml
                     test -f samconfig.toml
+
                     echo "Codigo: $BRANCH_NAME" | tee reports/pipeline-context.txt
                     echo "Config: $CONFIG_BRANCH" | tee -a reports/pipeline-context.txt
+                    echo "Repositorio configuracion: $CONFIG_REPO_URL" | tee -a reports/pipeline-context.txt
                     echo "Nodo Get Code: $(hostname)" | tee -a reports/pipeline-context.txt
                     echo "Usuario Get Code: $(whoami)" | tee -a reports/pipeline-context.txt
+
+                    echo "Contenido de samconfig.toml descargado:"
+                    cat samconfig.toml
                 '''
             }
         }
@@ -66,6 +77,7 @@ pipeline {
             steps {
                 sh '''
                     set -eu
+                    rm -rf .venv
                     python3 -m venv .venv
                     . .venv/bin/activate
                     python -m pip install --upgrade pip
@@ -106,11 +118,28 @@ pipeline {
                     sam validate --region "$AWS_REGION"
                     sam build
                     sam deploy --config-env "$SAM_ENV" --no-confirm-changeset --no-fail-on-empty-changeset
+
                     aws cloudformation describe-stacks \
                         --stack-name "$STACK_NAME" \
-                        --query "Stacks[0].Outputs[?OutputKey==BaseUrlApi].OutputValue" \
                         --region "$AWS_REGION" \
-                        --output text > reports/base_url.txt
+                        --output json > reports/stack.json
+
+                    python3 - <<'PY'
+import json
+
+with open("reports/stack.json") as f:
+    data = json.load(f)
+
+outputs = data["Stacks"][0].get("Outputs", [])
+for output in outputs:
+    if output.get("OutputKey") == "BaseUrlApi":
+        with open("reports/base_url.txt", "w") as f:
+            f.write(output["OutputValue"] + "\\n")
+        break
+else:
+    raise SystemExit("No se encontro el output BaseUrlApi")
+PY
+
                     cat reports/base_url.txt
                     test -s reports/base_url.txt
                 '''
@@ -152,7 +181,7 @@ pipeline {
                     git fetch origin master develop
                     git checkout master
                     git merge --no-edit origin/develop
-                    git push origin master
+                    echo "Promocion local completada. Para subir a GitHub ejecutar manualmente: git push origin master"
                 '''
             }
         }
@@ -160,7 +189,7 @@ pipeline {
 
     post {
         always {
-            archiveArtifacts artifacts: 'reports/*/', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'reports/**/*', allowEmptyArchive: true
         }
     }
 }
