@@ -56,7 +56,7 @@ pipeline {
                     echo "Nodo Get Code: $(hostname)" | tee -a reports/pipeline-context.txt
                     echo "Usuario Get Code: $(whoami)" | tee -a reports/pipeline-context.txt
                 '''
-                stash name: 'source', includes: 'src/*,test/*,pytest.ini,template.yaml,requirements-dev.txt,samconfig.toml'
+                stash name: 'source', includes: 'src/**,test/**,pytest.ini,template.yaml,requirements-dev.txt,samconfig.toml'
             }
         }
 
@@ -88,6 +88,11 @@ pipeline {
                     test -f reports/bandit.html
                 '''
                 stash name: 'static-reports', includes: 'reports/flake8.txt,reports/bandit.txt,reports/bandit.html'
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'reports/flake8.txt,reports/bandit.txt,reports/bandit.html', allowEmptyArchive: true
+                }
             }
         }
 
@@ -130,7 +135,7 @@ PY
                     cat reports/base_url.txt
                     test -s reports/base_url.txt
                 '''
-                stash name: 'rest-input', includes: 'src/*,test/*,pytest.ini,requirements-dev.txt,src/requirements.txt,reports/base_url.txt'
+                stash name: 'rest-input', includes: 'src/**,test/**,pytest.ini,requirements-dev.txt,src/requirements.txt,reports/base_url.txt'
             }
         }
 
@@ -160,20 +165,26 @@ PY
                     cat "$TEST_LOG"
                     exit $status
                 '''
-                stash name: 'rest-reports', includes: 'reports/*/'
+                stash name: 'rest-reports', includes: 'reports/**/*'
             }
             post {
                 always {
                     junit allowEmptyResults: true, testResults: 'reports/*.xml'
-                    archiveArtifacts artifacts: 'reports/*/', allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'reports/**/*', allowEmptyArchive: true
                 }
             }
         }
 
         stage('Promote') {
+            when {
+                expression { env.TARGET_ENV == 'staging' }
+            }
             steps {
+                unstash 'rest-reports'
                 sh '''
                     set -eu
+                    echo "Nodo Promote: $(hostname)"
+                    echo "Usuario Promote: $(whoami)"
                     git config user.email "jenkins@example.local"
                     git config user.name "Jenkins CI"
                     git fetch origin master develop
@@ -183,6 +194,7 @@ PY
                 '''
             }
         }
+    }
 
     post {
         always {
@@ -193,7 +205,7 @@ PY
                     echo 'No hay informes REST para recuperar en este nodo.'
                 }
             }
-            archiveArtifacts artifacts: 'reports/*/', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'reports/**/*', allowEmptyArchive: true
         }
     }
 }
