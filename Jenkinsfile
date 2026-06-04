@@ -38,6 +38,8 @@ pipeline {
                     set -eu
                     echo "BRANCH_NAME=$BRANCH_NAME"
                     echo "TARGET_ENV=$TARGET_ENV"
+                    echo "CONFIG_BRANCH=$CONFIG_BRANCH"
+                    echo "STACK_NAME=$STACK_NAME"
                     echo "Nodo Resolve Branch: $(hostname)"
                     echo "Usuario Resolve Branch: $(whoami)"
                 '''
@@ -51,13 +53,22 @@ pipeline {
                     set -eu
                     rm -rf .cp-config reports
                     mkdir -p reports
+
+                    echo "Descargando configuracion externa..."
                     git clone --depth 1 --branch "$CONFIG_BRANCH" "$CONFIG_REPO_URL" .cp-config
+
+                    echo "Copiando samconfig.toml desde repo de configuracion..."
                     cp .cp-config/samconfig.toml samconfig.toml
                     test -f samconfig.toml
+
                     echo "Codigo: $BRANCH_NAME" | tee reports/pipeline-context.txt
                     echo "Config: $CONFIG_BRANCH" | tee -a reports/pipeline-context.txt
+                    echo "Repositorio configuracion: $CONFIG_REPO_URL" | tee -a reports/pipeline-context.txt
                     echo "Nodo Get Code: $(hostname)" | tee -a reports/pipeline-context.txt
                     echo "Usuario Get Code: $(whoami)" | tee -a reports/pipeline-context.txt
+
+                    echo "Contenido de samconfig.toml descargado:"
+                    cat samconfig.toml
                 '''
             }
         }
@@ -159,6 +170,9 @@ PY
         }
 
         stage('Promote') {
+            when {
+                branch 'develop'
+            }
             steps {
                 sh '''
                     set -eu
@@ -171,6 +185,7 @@ PY
                 '''
             }
         }
+    }
 
     post {
         always {
