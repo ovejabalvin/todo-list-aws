@@ -108,7 +108,7 @@ pipeline {
                     sam deploy --config-env "$SAM_ENV" --no-confirm-changeset --no-fail-on-empty-changeset
                     aws cloudformation describe-stacks \
                         --stack-name "$STACK_NAME" \
-                        --query 'Stacks[0].Outputs[?OutputKey==BaseUrlApi].OutputValue' \
+                        --query "Stacks[0].Outputs[?OutputKey==BaseUrlApi].OutputValue" \
                         --region "$AWS_REGION" \
                         --output text > reports/base_url.txt
                     cat reports/base_url.txt
