@@ -12,8 +12,6 @@ pipeline {
     environment {
         APP_REPO_URL = 'https://github.com/ovejabalvin/todo-list-aws.git'
         CONFIG_REPO_URL = 'https://github.com/ovejabalvin/todo-list-aws-config.git'
-        STATIC_AGENT_LABEL = 'static'
-        REST_AGENT_LABEL = 'rest'
         AWS_REGION = 'us-east-1'
     }
 
@@ -77,6 +75,7 @@ pipeline {
                     echo "Nodo Static Test: $(hostname)"
                     echo "Usuario Static Test: $(whoami)"
                     mkdir -p reports
+                    rm -rf .venv
                     python3 -m venv .venv
                     . .venv/bin/activate
                     python -m pip install --upgrade pip
@@ -106,11 +105,28 @@ pipeline {
                     sam validate --region "$AWS_REGION"
                     sam build
                     sam deploy --config-env "$SAM_ENV" --no-confirm-changeset --no-fail-on-empty-changeset
+
                     aws cloudformation describe-stacks \
                         --stack-name "$STACK_NAME" \
-                        --query "Stacks[0].Outputs[?OutputKey==BaseUrlApi].OutputValue" \
                         --region "$AWS_REGION" \
-                        --output text > reports/base_url.txt
+                        --output json > reports/stack.json
+
+                    python - <<'PY'
+import json
+
+with open("reports/stack.json") as f:
+    data = json.load(f)
+
+outputs = data["Stacks"][0].get("Outputs", [])
+for output in outputs:
+    if output.get("OutputKey") == "BaseUrlApi":
+        with open("reports/base_url.txt", "w") as f:
+            f.write(output["OutputValue"] + "\\n")
+        break
+else:
+    raise SystemExit("No se encontro el output BaseUrlApi")
+PY
+
                     cat reports/base_url.txt
                     test -s reports/base_url.txt
                 '''
@@ -129,6 +145,7 @@ pipeline {
                     set -eu
                     echo "Nodo Rest Test: $(hostname)"
                     echo "Usuario Rest Test: $(whoami)"
+                    rm -rf .venv
                     python3 -m venv .venv
                     . .venv/bin/activate
                     python -m pip install --upgrade pip
